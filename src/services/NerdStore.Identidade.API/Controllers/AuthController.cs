@@ -17,8 +17,7 @@ using SignInResult = Microsoft.AspNetCore.Identity.SignInResult;
 namespace NerdStore.Identidade.API.Controllers
 {
     [Route("api/identidade")]
-    [ApiController]
-    public class AuthController : ControllerBase
+    public class AuthController : MainController
     {
         private readonly SignInManager<IdentityUser> signInManager;
         private readonly UserManager<IdentityUser> userManager;
@@ -34,7 +33,7 @@ namespace NerdStore.Identidade.API.Controllers
         [HttpPost("nova-conta")]
         public async Task<ActionResult> Registrar(UsuarioRegistro usuarioRegistro)
         {
-            if (!ModelState.IsValid) return BadRequest();
+            if (!ModelState.IsValid) return this.CustomResponse(ModelState);
 
             IdentityUser user = new IdentityUser()
             {
@@ -47,17 +46,21 @@ namespace NerdStore.Identidade.API.Controllers
 
             if(result.Succeeded)
             {
-                await signInManager.SignInAsync(user, isPersistent: false);
-                return Ok(await this.GerarJwt(usuarioRegistro.Email));
+                return this.CustomResponse(await this.GerarJwt(usuarioRegistro.Email));
             }
 
-            return BadRequest();
+            foreach (var error in result.Errors)
+            {
+                this.AddError(error.Description);
+            }
+
+            return this.CustomResponse();
         }
 
         [HttpPost("autenticar")]
         public async Task<ActionResult> Login(UsuarioLogin usuarioLogin)
         {
-            if (!ModelState.IsValid) return BadRequest();
+            if (!ModelState.IsValid) return this.CustomResponse(ModelState);
 
             SignInResult result = await this.signInManager.PasswordSignInAsync(usuarioLogin.Email, usuarioLogin.Senha, false, true);
 
@@ -66,7 +69,14 @@ namespace NerdStore.Identidade.API.Controllers
                 return Ok(await this.GerarJwt(usuarioLogin.Email));
             }
 
-            return BadRequest();
+            if (result.IsLockedOut)
+            {
+                this.AddError("User is temporarily locked out :/");
+                return this.CustomResponse();
+            }
+
+            this.AddError("Incorrect email or password!");
+            return this.CustomResponse();
         }
 
         private async Task<UsuarioRespostaLogin> GerarJwt(string email)
@@ -119,6 +129,5 @@ namespace NerdStore.Identidade.API.Controllers
 
         private static long ToUnixEpochDate(DateTime date)
             => new DateTimeOffset(date).ToUnixTimeSeconds();
-
     }
 }
